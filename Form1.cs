@@ -37,6 +37,7 @@ namespace Modbus_TCP_Server {
         private double[] GTP9;
         private double[] GTP10;
 
+        private double[] GTP0_final;
         private double[] GTP1_final;
         private double[] GTP2_final;
         private double[] GTP3_final;
@@ -60,17 +61,6 @@ namespace Modbus_TCP_Server {
         private Dictionary<int, double> GTP9_DB;
         private Dictionary<int, double> GTP10_DB;
 
-        private Dictionary<int, double> GTP0_RAW;
-        private Dictionary<int, double> GTP1_RAW;
-        private Dictionary<int, double> GTP2_RAW;
-        private Dictionary<int, double> GTP3_RAW;
-        private Dictionary<int, double> GTP4_RAW;
-        private Dictionary<int, double> GTP5_RAW;
-        private Dictionary<int, double> GTP6_RAW;
-        private Dictionary<int, double> GTP7_RAW;
-        private Dictionary<int, double> GTP8_RAW;
-        private Dictionary<int, double> GTP9_RAW;
-        private Dictionary<int, double> GTP10_RAW;
 
         private ArrayList TimeReperPoints1;
         private ArrayList TimeReperPoints2;
@@ -100,18 +90,13 @@ namespace Modbus_TCP_Server {
         private int pbrD; //День в ПБР
         private int pbrHour; //Час в ПБР
         private int pbrMin; //Минута в ПБР
-        private int LastpbrHour; // час в последнем принятом ПБР
-        private int LastpbrD;    // день в последнем принятом ПБР   
-        private int LastpbrM;    // месяц в последнем принятом ПБР 
-        private int LastpbrY;    // год в последнем принятом ПБР 
-        private int CurrSec = 0;// текущая секунда из Овации
+         private int CurrSec = 0;// текущая секунда из Овации
         private int CurrMin = 0;// текущая секунда из Овации
         private int CurrHour = 0;// текущая секунда из Овации
         private int CurrDay = 0;// текущий день из Овации
         private int CurrMonth = 0;// текущий месяц из Овации
         private int CurrYear = 0;// текущий год из Овации
         private int Today;// текущий день
-        private int GlobalTimeStep;// текущий день
 
         private Vyrabotka vyr0 = new Vyrabotka();
         private Vyrabotka vyr1 = new Vyrabotka();
@@ -161,7 +146,8 @@ namespace Modbus_TCP_Server {
         private int SUMGTPID;
         private string[] SUMGTPKEYS;
         private bool SUMGTPCREATE;
-        private bool SUMGTPADDITIONAL=true;
+        private bool SUMGTPADDITIONAL = true;
+        private bool NoConnect = true;
 
         private int LocalName;    //имя компа на котором запущен АвтоОператор
         private int RUSATime;   //время РУСА в секундах
@@ -570,6 +556,18 @@ namespace Modbus_TCP_Server {
                     }
                 }
             }
+            if (TimeStep == 1800) {
+                if (TimeReperPoints.Count > 0) {
+                    int first = (int)TimeReperPoints[0];
+                    if (this.CurrSec + 60 * 60 > first && this.CurrSec < first) {
+                        for (int s = this.CurrSec; s < first; s++) {
+                            GTP_final[s] = GTP_final[first];
+                            GTP[s] = GTP[first];
+                        }
+                    }
+                }
+            }
+
             TimeReperPoints.Clear();
             GTP_DB.Clear();
         }
@@ -827,7 +825,8 @@ namespace Modbus_TCP_Server {
                         string str5;
                         string str4 = str5 = Convert.ToString(GTP[Convert.ToInt32(TimeReperPoints[i])]).Replace(',', '.');
                         string str7 = this.GetDate(num4);
-                        new SqlCommand("INSERT INTO DATA (PARNUMBER,OBJECT,ITEM,VALUE0,VALUE1,OBJTYPE,DATA_DATE,P2KStatus,RcvStamp,SEASON) VALUES (" + str + "," + str2 + "," + str3 + "," + str4 + "," + str5 + "," + str6 + ",'" + str7 + "'," + str8 + "," + str9 + "," + currentSeason + ")", this.DBConn).ExecuteNonQuery();
+                        string cmd = "INSERT INTO DATA (PARNUMBER,OBJECT,ITEM,VALUE0,VALUE1,OBJTYPE,DATA_DATE,P2KStatus,RcvStamp,SEASON) VALUES (" + str + "," + str2 + "," + str3 + "," + str4 + "," + str5 + "," + str6 + ",'" + str7 + "'," + str8 + "," + str9 + "," + currentSeason + ")";
+                        new SqlCommand(cmd, this.DBConn).ExecuteNonQuery();
                     }
                 }
             }
@@ -954,15 +953,13 @@ namespace Modbus_TCP_Server {
             for (int i = 0; i < 172801; i += 30) {
                 ind++;
                 double x = Convert.ToDouble(i) / 3600.0;
-                try {
+                if (curve.Points.Count > ind) {
                     curve.Points[ind].X = x;
                     curve.Points[ind].Y = GTP[i];
                 }
-                catch {
+                else {
                     curve.AddPoint(new PointPair(x, GTP[i]));
                 }
-
-                //points.Add(x, GTP[i]);
 
                 if (GTP[i] > num) {
                     num = GTP[i];
@@ -971,14 +968,17 @@ namespace Modbus_TCP_Server {
                     num2 = GTP[i];
                 }
             }
-            foreach (KeyValuePair<int, double> pair in PReal) {
-                if (pair.Value > num) {
-                    num = pair.Value;
-                }
-                if (pair.Value < num2) {
-                    num2 = pair.Value;
+            try {
+                foreach (KeyValuePair<int, double> pair in PReal) {
+                    if (pair.Value > num) {
+                        num = pair.Value;
+                    }
+                    if (pair.Value < num2) {
+                        num2 = pair.Value;
+                    }
                 }
             }
+            catch { }
             //LineItem item = graphPane.AddCurve("ГТП-" + Convert.ToString(GTPNumber), points, col, SymbolType.None);
             //item.Line.Width = 2f;
             double num5 = 24.0;
@@ -1026,11 +1026,11 @@ namespace Modbus_TCP_Server {
                 for (int j = 0; j < PReal.Count; j++) {
                     ind++;
                     double x = Convert.ToDouble(keys[j]) / 3600.0;
-                    try {
+                    if (curveFakt.Points.Count > ind) {
                         curveFakt[ind].X = x;
                         curveFakt[ind].Y = PReal[keys[j]];
                     }
-                    catch {
+                    else {
                         curveFakt.AddPoint(new PointPair(x, PReal[keys[j]]));
                     }
 
@@ -1079,7 +1079,8 @@ namespace Modbus_TCP_Server {
             Logger.Info("DrawGTPs");
             for (int i = 0; i < 172801; i++) {
                 this.GTP0[i] = (((((((((this.isGTP1 ? this.GTP1[i] : 0.0) + (this.isGTP2 ? this.GTP2[i] : 0.0)) + (this.isGTP3 ? this.GTP3[i] : 0.0)) + (this.isGTP4 ? this.GTP4[i] : 0.0)) + (this.isGTP5 ? this.GTP5[i] : 0.0)) + (this.isGTP6 ? this.GTP6[i] : 0.0)) + (this.isGTP7 ? this.GTP7[i] : 0.0)) + (this.isGTP8 ? this.GTP8[i] : 0.0)) + (this.isGTP9 ? this.GTP9[i] : 0.0)) + (this.isGTP10 ? this.GTP10[i] : 0.0);
-                if (SUMGTPCREATE&&SUMGTPADDITIONAL) {
+                this.GTP0_final[i] = (((((((((this.isGTP1 ? this.GTP1_final[i] : 0.0) + (this.isGTP2 ? this.GTP2_final[i] : 0.0)) + (this.isGTP3 ? this.GTP3_final[i] : 0.0)) + (this.isGTP4 ? this.GTP4_final[i] : 0.0)) + (this.isGTP5 ? this.GTP5_final[i] : 0.0)) + (this.isGTP6 ? this.GTP6_final[i] : 0.0)) + (this.isGTP7 ? this.GTP7_final[i] : 0.0)) + (this.isGTP8 ? this.GTP8_final[i] : 0.0)) + (this.isGTP9 ? this.GTP9_final[i] : 0.0)) + (this.isGTP10 ? this.GTP10_final[i] : 0.0);
+                if (SUMGTPCREATE && SUMGTPADDITIONAL) {
                     if (isGTP1 && GTP1_ID == SUMGTPID) this.GTP0[i] -= this.GTP1[i];
                     if (isGTP2 && GTP2_ID == SUMGTPID) this.GTP0[i] -= this.GTP2[i];
                     if (isGTP3 && GTP3_ID == SUMGTPID) this.GTP0[i] -= this.GTP3[i];
@@ -1090,10 +1091,22 @@ namespace Modbus_TCP_Server {
                     if (isGTP8 && GTP8_ID == SUMGTPID) this.GTP0[i] -= this.GTP8[i];
                     if (isGTP9 && GTP9_ID == SUMGTPID) this.GTP0[i] -= this.GTP9[i];
                     if (isGTP10 && GTP10_ID == SUMGTPID) this.GTP0[i] -= this.GTP10[i];
+
+                    if (isGTP1 && GTP1_ID == SUMGTPID) this.GTP0_final[i] -= this.GTP1_final[i];
+                    if (isGTP2 && GTP2_ID == SUMGTPID) this.GTP0_final[i] -= this.GTP2_final[i];
+                    if (isGTP3 && GTP3_ID == SUMGTPID) this.GTP0_final[i] -= this.GTP3_final[i];
+                    if (isGTP4 && GTP4_ID == SUMGTPID) this.GTP0_final[i] -= this.GTP4_final[i];
+                    if (isGTP5 && GTP5_ID == SUMGTPID) this.GTP0_final[i] -= this.GTP5_final[i];
+                    if (isGTP6 && GTP6_ID == SUMGTPID) this.GTP0_final[i] -= this.GTP6_final[i];
+                    if (isGTP7 && GTP7_ID == SUMGTPID) this.GTP0_final[i] -= this.GTP7_final[i];
+                    if (isGTP8 && GTP8_ID == SUMGTPID) this.GTP0_final[i] -= this.GTP8_final[i];
+                    if (isGTP9 && GTP9_ID == SUMGTPID) this.GTP0_final[i] -= this.GTP9_final[i];
+                    if (isGTP10 && GTP10_ID == SUMGTPID) this.GTP0_final[i] -= this.GTP10_final[i];
                 }
             }
 
             this.DrawGTP(this.zg0, this.GTP0, 0, Color.Blue, 1, 1, this.PGES, 0, 1);
+            this.DrawGTP(this.zg0, this.GTP0_final, 0, Color.Red, 1, 1, this.PGES, 2, -1);
             if (this.isGTP1) {
                 this.DrawGTP(this.zg1, this.GTP1, 1, Color.Blue, 0, 1, this.PGTP1, 0, 1);
                 this.DrawGTP(this.zg1, this.GTP1_final, 1, Color.Red, 1, 0, this.PGTP1, 2, -1);
@@ -1187,6 +1200,7 @@ namespace Modbus_TCP_Server {
             this.CurrMonth = now.Month;
             this.CurrDay = now.Day;
             this.CurrSec = (now.Second + (60 * now.Minute)) + (3600 * now.Hour);
+            //this.isActualDate = true;
             this.dataGridView1.Rows.Add(this.MySlave.GetNumberMBRegisters());
             for (int i = 0; i < this.MySlave.GetNumberMBRegisters(); i++) {
                 this.dataGridView1.Rows[i].Cells[0].Value = Convert.ToString((int)((40000 + i) + 1));
@@ -1336,6 +1350,7 @@ namespace Modbus_TCP_Server {
 
             Logger.Info("Form1_Load - создание массивов");
             this.GTP0 = new double[172801];
+            this.GTP0_final = new double[172801];
             if (this.isGTP1) {
                 this.GTP1 = new double[172801];
                 this.GTP1_final = new double[172801];
@@ -1392,6 +1407,7 @@ namespace Modbus_TCP_Server {
                 this.TimeReperPoints6 = new ArrayList();
                 this.GTP6_DB = new Dictionary<int, double>();
                 this.checkBox6.Checked = true;
+
             }
             else {
                 this.tabControl1.TabPages.Remove(this.tabPage7);
@@ -1441,6 +1457,7 @@ namespace Modbus_TCP_Server {
             this.DBConn = new SqlConnection("server=" + this.DBIP + ";user id =" + this.DBLogin + ";password=" + this.DBPassword + ";database=" + this.DBName + ";connection timeout=15");
             try {
                 this.DBConn.Open();
+                new SqlCommand("SET DATEFORMAT ymd", DBConn).ExecuteNonQuery();
                 this.WriteLog(this.CurrSec, "Соединение с базой данных успешно установлено.");
             }
             catch {
@@ -1451,6 +1468,7 @@ namespace Modbus_TCP_Server {
                 this.LocalName = Convert.ToInt32(Environment.MachineName.Substring(4, 3));
             }
             this.timer1.Enabled = true;
+
             this.UpdateVyr();
             zg1.GraphPane.XAxis.ScaleFormatEvent += new Axis.ScaleFormatHandler(XAxis_ScaleFormatEvent);
             zg2.GraphPane.XAxis.ScaleFormatEvent += new Axis.ScaleFormatHandler(XAxis_ScaleFormatEvent);
@@ -1490,15 +1508,7 @@ namespace Modbus_TCP_Server {
 
         private string GetDate(int second) {
             DateTime dt = new DateTime(this.CurrYear, this.CurrMonth, this.CurrDay).AddSeconds(second);
-            return dt.ToString("yyyy-MM-dd HH:mm:ss") + ".000";
-            /*int currDay = this.CurrDay;
-            if ((second >= 86400) && (second < 172800)) {
-                currDay = this.GetNextDay(this.CurrDay, this.CurrMonth, this.CurrYear);
-            }
-            if (second >= 172800) {
-                currDay = this.GetNextDay(this.GetNextDay(this.CurrDay, this.CurrMonth, this.CurrYear), this.CurrMonth, this.CurrYear);
-            }
-            return (Convert.ToString(this.CurrYear) + "-" + Convert.ToString(this.CurrMonth).PadLeft(2, '0') + "-" + Convert.ToString(currDay).PadLeft(2, '0') + " " + Convert.ToString((int)((second / 3600) % 24)).PadLeft(2, '0') + ":" + Convert.ToString((int)((second % 3600) / 60)).PadLeft(2, '0') + ":" + Convert.ToString((int)(second % 60)).PadLeft(2, '0') + ".000");*/
+            return dt.ToString("yyyy-MM-dd HH:mm:ss");            
         }
 
 
@@ -1506,32 +1516,7 @@ namespace Modbus_TCP_Server {
 
         private int GetNextDay(int day, int month, int year) {
             DateTime dt = new DateTime(year, month, day);
-            return dt.AddDays(1).Day;
-            /*int[] numArray = new int[12];
-            numArray[0] = 31;
-            if ((year % 4) == 0) {
-                numArray[1] = 29;
-            } else {
-                numArray[1] = 28;
-            }
-            numArray[2] = 31;
-            numArray[3] = 30;
-            numArray[4] = 31;
-            numArray[5] = 30;
-            numArray[6] = 31;
-            numArray[7] = 31;
-            numArray[8] = 30;
-            numArray[9] = 31;
-            numArray[10] = 30;
-            numArray[11] = 31;
-            int num = month;
-            if ((num < 1) || (num > 12)) {
-                num = 1;
-            }
-            if (day < numArray[num - 1]) {
-                return (day + 1);
-            }
-            return 1;*/
+            return dt.AddDays(1).Day;           
         }
 
 
@@ -1708,7 +1693,6 @@ namespace Modbus_TCP_Server {
 
         private void MakeLinearAppr(ArrayList TimeReperPoints, double[] GTP_final, Dictionary<int, double> GTP_DB) {
             Logger.Info("MakeLinearAppr");
-            this.GlobalTimeStep = 60;
             for (int i = 0; i < (TimeReperPoints.Count - 1); i++) {
                 int index = Convert.ToInt32(TimeReperPoints[i]);
                 int num4 = Convert.ToInt32(TimeReperPoints[i + 1]);
@@ -1773,7 +1757,6 @@ namespace Modbus_TCP_Server {
 
         private void MakePowerAppr(ArrayList TimeReperPoints, double[] GTP_final, Dictionary<int, double> GTP_DB) {
             Logger.Info("MakePowerAppr");
-            this.GlobalTimeStep = 30;
             for (int i = 0; i < (TimeReperPoints.Count - 1); i++) {
                 int index = Convert.ToInt32(TimeReperPoints[i]);
                 int num2 = Convert.ToInt32(TimeReperPoints[i + 1]);
@@ -1966,9 +1949,86 @@ namespace Modbus_TCP_Server {
         }
 
 
+        private void MakeHHAppr(ArrayList TimeReperPoints, double[] GTP_final, Dictionary<int, double> GTP_DB) {
+            Logger.Info("MakeHHAppr");
+            int sec, secDiff, sec1, sec2;
+            double p1, p2;
+            SortedList<int, double> PBR = new SortedList<int, double>();
+
+
+            for (int i = 0; i < TimeReperPoints.Count; i++) {
+                sec = (int)TimeReperPoints[i];
+                secDiff = sec - 15 * 60;
+                double p = GTP_final[sec];
+                if (p > 10 && p < 35)
+                    secDiff = secDiff - 15 * 60;
+                PBR.Add(secDiff, p);          
+                if (i > 0 ) {
+                    sec1 = (int)TimeReperPoints[i - 1];
+                    sec2 = (int)TimeReperPoints[i];
+                    
+                    p1 = GTP_final[sec1];
+                    p2 = GTP_final[sec2];
+                    if (p1 < 35 && p1 > 10 || p2 < 35 && p2 > 10)
+                        continue;
+                    sec = (int)(sec2 + sec1) / 2;
+                    secDiff = sec - 15 * 60;
+
+                    p = (p1 + p2) / 2;
+                    if (p < 35 && p > 10) {
+                        int newSec = (int)(p / 35 * 30) * 60;
+                        if (p1 < p2) {
+                            secDiff = secDiff + 30 * 60 - newSec;
+                            PBR.Add(secDiff, 35);
+                        }
+                        else {
+                            PBR.Add(secDiff, 35);
+                            PBR.Add(secDiff + newSec, p2);
+                        }
+                    }else{
+                        PBR.Add(secDiff, p);
+                    }                    
+                }
+            }
+
+            List<int> Keys = PBR.Keys.ToList();
+            double prevP = -1;
+            int index = 0;
+            foreach (int s in Keys) {
+                if (index > 0) {
+                    if (PBR[s] != prevP)
+                        PBR.Add(s - 1, prevP);
+                }
+                prevP = PBR[s];
+                index++;
+            }
+            PBR.Add(GTP_final.Count() - 1, GTP_final.Last());
+
+            prevP = -1;
+            sec = 0;
+            foreach (KeyValuePair<int, double> de in PBR) {
+                GTP_DB.Add(de.Key, de.Value);
+                if (sec > 0) {
+                    for (int i = sec; i < de.Key; i++) {
+                        GTP_final[i] = prevP;
+                    }
+                }
+
+                prevP = de.Value;
+                sec = de.Key;
+            }
+            for (int s = sec; s <= GTP_final.Count() - 1; s++)
+                GTP_final[s] = prevP;
+
+        }
+
         private void MakeTimeAppr(ArrayList TimeReperPoints, double[] GTP_final, Dictionary<int, double> GTP_DB) {
+            if (this.TimeStep == 1800) {
+                this.MakeHHAppr(TimeReperPoints, GTP_final, GTP_DB);
+                return;
+            }
+
             Logger.Info("MakeTimeAppr");
-            this.GlobalTimeStep = 30;
             for (int i = 0; i < (TimeReperPoints.Count - 1); i++) {
                 int index = Convert.ToInt32(TimeReperPoints[i]);
                 int num2 = Convert.ToInt32(TimeReperPoints[i + 1]);
@@ -2156,6 +2216,7 @@ namespace Modbus_TCP_Server {
 
         private void ParsePBR(string PBRFile) {
             Logger.Info("Parse PBR");
+            bool readOK = true;
             try {
                 string[] strArray = File.ReadAllLines(PBRFile);
 
@@ -2193,10 +2254,17 @@ namespace Modbus_TCP_Server {
                         int val = 0;
                         foreach (string gtp in SUMGTPKEYS) {
                             try {
-                                int i = Int32.Parse(gtp);
-                                val += Data[i][dt];
+                                int i = 0;
+                                try { i = Int32.Parse(gtp); }
+                                catch { }
+                                if (i > 0) {
+                                    val += Data[i][dt];
+                                }
                             }
-                            catch { }                            
+                            catch {
+                                Logger.Info(String.Format("Ошибка при формировании суммарной ГТП. ПБР не принят date={0} gtp={1}", dt, gtp));
+                                readOK = false;
+                            }
                         }
                         Data[this.SUMGTPID].Add(dt, val);
                     }
@@ -2212,8 +2280,11 @@ namespace Modbus_TCP_Server {
                         }
                     }
                     strArray = listStr.ToArray();
+                    if (!readOK)
+                        return;
                     Logger.Info("Суммарная ГТП создана");
                 }
+
 
                 if (this.isGTP1) {
                     this.TimeReperPoints1.Clear();
@@ -2317,7 +2388,8 @@ namespace Modbus_TCP_Server {
                     this.MakeInterpolation();
                 }
                 //Thread.Sleep(200);
-                this.DBWriteData();
+                this.DBWriteData();                
+                this.DBReadData();
                 //Thread.Sleep(200);
                 this.DrawGTPS();
             }
@@ -2793,21 +2865,6 @@ namespace Modbus_TCP_Server {
         private void WriteLog(int TimeInSec, string Data) {
             Logger.Info(Data);
             return;
-            /*StreamWriter writer;
-            if (!File.Exists(this.LogFileName)) {
-                writer = new StreamWriter(this.LogFileName);
-            }
-            else {
-                FileInfo info = new FileInfo(this.LogFileName);
-                if (info.Length > 0x5f5e100L) {
-                    info.MoveTo(this.ArchDirName);
-                    writer = new StreamWriter(this.LogFileName);
-                }
-                writer = File.AppendText(this.LogFileName);
-            }
-            writer.WriteLine(this.GetDate(TimeInSec) + " -------- " + Data);
-            writer.WriteLine();
-            writer.Close();*/
         }
 
         private void WritePGTPtoDB(int CSec, double Power, int Item) {
@@ -2841,7 +2898,7 @@ namespace Modbus_TCP_Server {
             else {
                 num = num % 24;
             }
-            return Convert.ToString(num) ;
+            return Convert.ToString(num);
         }
 
 

@@ -124,6 +124,7 @@
     </Compile>
     <Compile Include="INIread.cs" />
     <Compile Include="Logger.cs" />
+    <Compile Include="Modbus1.cs" />
     <Compile Include="Modbus.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

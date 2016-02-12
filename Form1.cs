@@ -90,7 +90,7 @@ namespace Modbus_TCP_Server {
         private int pbrD; //День в ПБР
         private int pbrHour; //Час в ПБР
         private int pbrMin; //Минута в ПБР
-         private int CurrSec = 0;// текущая секунда из Овации
+        private int CurrSec = 0;// текущая секунда из Овации
         private int CurrMin = 0;// текущая секунда из Овации
         private int CurrHour = 0;// текущая секунда из Овации
         private int CurrDay = 0;// текущий день из Овации
@@ -131,6 +131,7 @@ namespace Modbus_TCP_Server {
         private bool isGTP8 = false;    // наличие ГТП-8
         private bool isGTP9 = false;    // наличие ГТП-9
         private bool isGTP10 = false;    // наличие ГТП-10
+        public bool isHHGrahp = false;
 
         private int GTP1_ID;    // ID ГТП-1
         private int GTP2_ID;    // ID ГТП-2
@@ -487,13 +488,14 @@ namespace Modbus_TCP_Server {
 
         private void DBReadData_each(ArrayList TimeReperPoints, double[] GTP, double[] GTP_final, Dictionary<int, double> GTP_DB, int Item) {
             TimeReperPoints.Clear();
+            List<int> TRP300 = new List<int>();
             GTP_DB.Clear();
             for (int i = 0; i < 172801; i++) {
                 GTP[i] = 0.0;
                 GTP_final[i] = 0.0;
             }
             string date = this.GetDate(0);
-            SqlCommand command = new SqlCommand("SELECT * FROM DATA WHERE DATA_DATE BETWEEN '" + date + "' AND DATEADD(SECOND,172800,'" + date + "') AND (PARNUMBER = 300 OR PARNUMBER = 301) AND ITEM = " + Convert.ToString(Item) + "ORDER BY DATA_DATE", this.DBConn);
+            SqlCommand command = new SqlCommand("SELECT * FROM DATA WHERE DATA_DATE BETWEEN '" + date + "' AND DATEADD(SECOND,172801,'" + date + "') AND (PARNUMBER = 300 OR PARNUMBER = 301) AND ITEM = " + Convert.ToString(Item) + "ORDER BY DATA_DATE", this.DBConn);
             SqlDataReader reader = command.ExecuteReader();
             while (reader.Read()) {
                 string str2 = Convert.ToString(reader.GetDateTime(6));
@@ -523,6 +525,8 @@ namespace Modbus_TCP_Server {
                         GTP_DB.Add(key, reader.GetDouble(3));
                     }
                     GTP_final[key] = reader.GetDouble(3);
+                    if (!TRP300.Contains(key))
+                        TRP300.Add(key);
                 }
                 if (reader.GetInt32(0) == 301) {
                     TimeReperPoints.Add(key);
@@ -532,6 +536,7 @@ namespace Modbus_TCP_Server {
             reader.Close();
             command.Dispose();
             TimeReperPoints.Sort();
+            TRP300.Sort();
             /*from x in GTP_DB
                     orderby x.Key
                     select x;*/
@@ -556,17 +561,35 @@ namespace Modbus_TCP_Server {
                     }
                 }
             }
-            if (TimeStep == 1800) {
+            Logger.Info("HH:" + isHHGrahp.ToString());
+            if (isHHGrahp) {
+                if (TRP300.Count > 0) {
+                    int first = TRP300.First();
+                    //Logger.Info("First: " + first+"  "+GTP_final[first]);
+                    for (int s = 0; s < first; s++) {
+                        GTP_final[s] = GTP_final[first];
+                    }
+                    try {
+                        if (GTP_final[CurrSec] == 0) { 
+                        first = TRP300.First(s => s >= CurrSec);
+                        if (first > CurrSec) {
+                            for (int s = CurrSec; s <= first; s++) {
+                                GTP_final[s] = GTP_final[first];
+                            }
+                        }
+                            }
+                    }
+                    catch (Exception e) { }
+                }
                 if (TimeReperPoints.Count > 0) {
                     int first = (int)TimeReperPoints[0];
-                    if (this.CurrSec + 60 * 60 > first && this.CurrSec < first) {
-                        for (int s = this.CurrSec; s < first; s++) {
-                            GTP_final[s] = GTP_final[first];
-                            GTP[s] = GTP[first];
-                        }
+                    //Logger.Info("First: " + first + "  " + GTP_final[first]);
+                    for (int s = 0; s < first; s++) {
+                        GTP[s] = GTP[first];
                     }
                 }
             }
+
 
             TimeReperPoints.Clear();
             GTP_DB.Clear();
@@ -726,7 +749,7 @@ namespace Modbus_TCP_Server {
                 string str5;
                 string str7;
                 string date = this.GetDate(second);
-                string str12 = this.GetDate(num2);
+                string str12 = this.GetDate(num2 + 1);
                 string str3 = Convert.ToString(Item);
                 SqlCommand command = new SqlCommand("DELETE FROM DATA WHERE ITEM = " + str3 + " AND  (PARNUMBER=300 OR PARNUMBER=301) AND (DATA_DATE BETWEEN '" + date + "' AND '" + str12 + "')", this.DBConn);
                 command.ExecuteNonQuery();
@@ -1200,7 +1223,7 @@ namespace Modbus_TCP_Server {
             this.CurrMonth = now.Month;
             this.CurrDay = now.Day;
             this.CurrSec = (now.Second + (60 * now.Minute)) + (3600 * now.Hour);
-            //this.isActualDate = true;
+            this.isActualDate = true;
             this.dataGridView1.Rows.Add(this.MySlave.GetNumberMBRegisters());
             for (int i = 0; i < this.MySlave.GetNumberMBRegisters(); i++) {
                 this.dataGridView1.Rows[i].Cells[0].Value = Convert.ToString((int)((40000 + i) + 1));
@@ -1292,6 +1315,8 @@ namespace Modbus_TCP_Server {
                 this.PowerStep = Convert.ToInt32(this.ini.IniReadValue("Approx", "PowerStep"));
                 this.comboBox4.Text = this.ini.IniReadValue("Approx", "PowerStep");
                 this.comboBox1.SelectedIndex = Convert.ToInt32(this.ini.IniReadValue("Approx", "SelectedIndex"));
+                if (this.comboBox1.SelectedIndex == 0 && TimeStep == 1800)
+                    this.isHHGrahp = true;
                 this.isGTP1 = Convert.ToBoolean(this.ini.IniReadValue("GTP", "GTP1"));
                 this.isGTP2 = Convert.ToBoolean(this.ini.IniReadValue("GTP", "GTP2"));
                 this.isGTP3 = Convert.ToBoolean(this.ini.IniReadValue("GTP", "GTP3"));
@@ -1508,7 +1533,7 @@ namespace Modbus_TCP_Server {
 
         private string GetDate(int second) {
             DateTime dt = new DateTime(this.CurrYear, this.CurrMonth, this.CurrDay).AddSeconds(second);
-            return dt.ToString("yyyy-MM-dd HH:mm:ss");            
+            return dt.ToString("yyyy-MM-dd HH:mm:ss");
         }
 
 
@@ -1516,7 +1541,7 @@ namespace Modbus_TCP_Server {
 
         private int GetNextDay(int day, int month, int year) {
             DateTime dt = new DateTime(year, month, day);
-            return dt.AddDays(1).Day;           
+            return dt.AddDays(1).Day;
         }
 
 
@@ -1962,11 +1987,12 @@ namespace Modbus_TCP_Server {
                 double p = GTP_final[sec];
                 if (p > 10 && p < 35)
                     secDiff = secDiff - 15 * 60;
-                PBR.Add(secDiff, p);          
-                if (i > 0 ) {
+                secDiff = secDiff < (int)TimeReperPoints[0] ? (int)TimeReperPoints[0] : secDiff;
+                PBR.Add(secDiff, p);
+                if (i > 0) {
                     sec1 = (int)TimeReperPoints[i - 1];
                     sec2 = (int)TimeReperPoints[i];
-                    
+
                     p1 = GTP_final[sec1];
                     p2 = GTP_final[sec2];
                     if (p1 < 35 && p1 > 10 || p2 < 35 && p2 > 10)
@@ -1985,9 +2011,10 @@ namespace Modbus_TCP_Server {
                             PBR.Add(secDiff, 35);
                             PBR.Add(secDiff + newSec, p2);
                         }
-                    }else{
+                    }
+                    else {
                         PBR.Add(secDiff, p);
-                    }                    
+                    }
                 }
             }
 
@@ -2002,7 +2029,7 @@ namespace Modbus_TCP_Server {
                 prevP = PBR[s];
                 index++;
             }
-            PBR.Add(GTP_final.Count() - 1, GTP_final.Last());
+            PBR.Add((int)TimeReperPoints[TimeReperPoints.Count - 1], PBR.Last().Value);
 
             prevP = -1;
             sec = 0;
@@ -2388,7 +2415,7 @@ namespace Modbus_TCP_Server {
                     this.MakeInterpolation();
                 }
                 //Thread.Sleep(200);
-                this.DBWriteData();                
+                this.DBWriteData();
                 this.DBReadData();
                 //Thread.Sleep(200);
                 this.DrawGTPS();
